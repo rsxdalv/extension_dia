@@ -233,6 +233,14 @@ def tts(
 
 
 def ui():
+    gr.Markdown(
+        """
+        # DIA: A text-to-dialogue model.
+        [GitHub](https://github.com/nari-labs/Dia) [HuggingFace](https://huggingface.co/nari-labs/Dia-1.6B)
+
+        DIA is an open weights text to dialogue model. You get full control over scripts and voices.
+        """
+    )
     # Default text example
     default_text = "[S1] Dia is an open weights text to dialogue model. \n[S2] You get full control over scripts and voices. \n[S1] Wow. Amazing. (laughs) \n[S2] Try it now on Git hub or Hugging Face."
 
