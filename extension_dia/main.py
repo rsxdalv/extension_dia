@@ -31,7 +31,6 @@ def extension__tts_generation_webui():
     return {
         "package_name": "extension_dia",
         "name": "DIA",
-        "version": "0.0.1",
         "requirements": "git+https://github.com/rsxdalv/extension_dia@main",
         "description": "DIA: A text-to-dialogue model",
         "extension_type": "interface",
