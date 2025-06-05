@@ -1,5 +1,6 @@
 import tempfile
 import time
+import functools
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -59,12 +60,17 @@ def get_dia(model_name="nari-labs/Dia-1.6B"):
         print(f"Using device: {device}")
 
         # Import here to avoid loading the model at startup
-        from dia.model import Dia
-
-        # Load Dia model
         print("Loading Dia model...")
-        # model = Dia.from_pretrained("nari-labs/Dia-1.6B", device=device)
-        model = Dia.from_pretrained(model_name, device=device)
+        from dia.model import Dia
+        dtype_map = {
+            "cpu": "float32",
+            "mps": "float32",  # Apple M series – better with float32
+            "cuda": "float16",  # NVIDIA – better with float16
+        }
+
+        dtype = dtype_map.get(device.type, "float16")
+        print(f"Using device: {device}, attempting to load model with {dtype}")
+        model = Dia.from_pretrained("nari-labs/Dia-1.6B", compute_dtype=dtype, device=device)
         print("Dia model loaded successfully")
 
         return model
@@ -75,16 +81,7 @@ def get_dia(model_name="nari-labs/Dia-1.6B"):
         raise
 
 
-@decorator_extension_outer
-@decorator_apply_torch_seed
-@decorator_save_metadata
-@decorator_save_wav
-@decorator_add_model_type("dia")
-@decorator_add_base_filename
-@decorator_add_date
-@decorator_log_generation
-@decorator_extension_inner
-@log_function_time
+
 def tts(
     text: str,
     audio_prompt_input: Optional[Tuple[int, np.ndarray]],
@@ -167,7 +164,6 @@ def tts(
                 cfg_scale=cfg_scale,
                 temperature=temperature,
                 top_p=top_p,
-                use_cfg_filter=True,
                 cfg_filter_top_k=cfg_filter_top_k,
                 use_torch_compile=False,
                 audio_prompt_path=prompt_path_for_generate,
@@ -205,6 +201,13 @@ def tts(
 
             print(f"Audio conversion successful. Final shape: {output_audio[1].shape}, Sample Rate: {output_sr}")
 
+            # Explicitly convert to int16 to prevent Gradio warning
+            if output_audio[1].dtype == np.float32 or output_audio[1].dtype == np.float64:
+                audio_for_gradio = np.clip(output_audio[1], -1.0, 1.0)
+                audio_for_gradio = (audio_for_gradio * 32767).astype(np.int16)
+                output_audio = (output_sr, audio_for_gradio)
+                print("Converted audio to int16 for Gradio output.")
+
         else:
             print("\nGeneration finished, but no valid tokens were produced.")
             # Return default silence
@@ -213,6 +216,7 @@ def tts(
     except Exception as e:
         print(f"Error during inference: {e}")
         import traceback
+
         traceback.print_exc()
         # Re-raise as Gradio error to display nicely in the UI
         raise gr.Error(f"Inference failed: {e}")
@@ -229,6 +233,21 @@ def tts(
     return {
         "audio_out": output_audio,
     }
+
+
+@functools.wraps(tts)
+@decorator_extension_outer
+@decorator_apply_torch_seed
+@decorator_save_metadata
+@decorator_save_wav
+@decorator_add_model_type("dia")
+@decorator_add_base_filename
+@decorator_add_date
+@decorator_log_generation
+@decorator_extension_inner
+@log_function_time
+def tts_decorated(*args, **kwargs):
+    return tts(*args, **kwargs)
 
 
 def ui():
@@ -249,8 +268,9 @@ def ui():
                 lines=5,
                 label="Input Text",
                 placeholder="Enter text here...",
-                value=default_text
+                value=default_text,
             )
+            generate_btn = gr.Button("Generate Audio", variant="primary")
             audio_prompt_input = gr.Audio(
                 label="Audio Prompt (Optional)",
                 show_label=True,
@@ -307,22 +327,21 @@ def ui():
                     info="Adjusts the speed of the generated audio (1.0 = original speed).",
                 )
 
-            generate_btn = gr.Button("Generate Audio", variant="primary")
 
         with gr.Column(scale=1):
-            unload_model_button("dia")
-            seed, randomize_seed_callback = randomize_seed_ui()
             audio_out = gr.Audio(
                 label="Generated Audio",
                 type="numpy",
                 autoplay=False,
             )
+            seed, randomize_seed_callback = randomize_seed_ui()
+            unload_model_button("dia")
 
     generate_btn.click(
         **randomize_seed_callback,
     ).then(
         **dictionarize(
-            fn=tts,
+            fn=tts_decorated,
             inputs={
                 text: "text",
                 audio_prompt_input: "audio_prompt_input",

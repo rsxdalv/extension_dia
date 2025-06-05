@@ -3,7 +3,7 @@ import setuptools
 setuptools.setup(
     name="extension_dia",
     packages=setuptools.find_namespace_packages(),
-    version="0.0.1",
+    version="0.1.0",
     author="rsxdalv",
     description="DIA: A text-to-dialogue model",
     url="https://github.com/rsxdalv/extension_dia",
